@@ -1,0 +1,2 @@
+API: 2025/02/03 16:02:09 main.go:89: Using port 8555
+API: 2025/02/03 16:02:09 pgsql.go:113: Successfully connected to db postgresql://postgres:postgres@10.76.10.102:5432/wip_1045!
