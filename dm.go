@@ -15,8 +15,20 @@ import (
 
 const DM_TABLE_NAME = "dm"
 
+// dm_get_all godoc
+// @Summary      Получение списка кодов маркировки
+// @Description  Получить список кодов маркировки с пагинацией по фильтрам
+// @Tags         dm
+// @Accept       json
+// @Produce      json
+// @Param        filter query helpers.CodeFilterParams false "Фильтры отбора"
+// @Success      200  {array}  DataMatrixCode
+// @Failure      400  {string}  string
+// @Failure      404  {string}  string
+// @Failure      500  {string}  string
+// @Router       /dm [get]
 func (h handler) dm_get_all(w http.ResponseWriter, r *http.Request) {
-	q := r.Context().Value(httpin.Input).(*DmFilterParams)
+	q := r.Context().Value(httpin.Input).(*helpers.CodeFilterParams)
 
 	p_size, err := helpers.GetPageSize(r)
 	if err != nil {
@@ -31,9 +43,14 @@ func (h handler) dm_get_all(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filterMap := helpers.StructToMap(q)
-	sql, _, _ := goqu.Select("*").From(DM_TABLE_NAME).Where(goqu.Ex(filterMap)).Order(goqu.C("dm").Asc()).Offset(helpers.CalcOffset(p_size, p_num)).Limit(uint(p_size)).ToSQL()
-	fmt.Println(sql)
+	whereConditions, err := helpers.BuildWhereClause(q)
+	if err != nil {
+		// Обработка ошибки
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	sql, _, _ := goqu.Select("*").From(DM_TABLE_NAME).Where(whereConditions...).Order(goqu.C("dm").Asc()).Offset(helpers.CalcOffset(p_size, p_num)).Limit(uint(p_size)).ToSQL()
+	log.Println(sql)
 	dms := []DataMatrixCode{}
 	err = pgxscan.Select(r.Context(), h.DB, &dms, sql)
 	if err != nil {
@@ -42,7 +59,8 @@ func (h handler) dm_get_all(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total_rows := helpers.RowCount{}
-	sql_count, _, _ := goqu.Select(goqu.COUNT("*")).From(DM_TABLE_NAME).Where(goqu.Ex(filterMap)).ToSQL()
+	sql_count, _, _ := goqu.Select(goqu.COUNT("*")).From(DM_TABLE_NAME).Where(whereConditions...).ToSQL()
+	log.Println(sql_count)
 	err = pgxscan.Get(r.Context(), h.DB, &total_rows, sql_count)
 	if err != nil {
 		log.Println("Ошибка обмена с БД!", err)
@@ -51,7 +69,7 @@ func (h handler) dm_get_all(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	pages := DmPagedResponse{Next_page: p_num + 1, Page: p_num, Previous_page: p_num - 1, Total_records: total_rows.Total, Response: dms}
+	pages := DmPagedResponse{Next_page: p_num + 1, Page: p_num, Previous_page: p_num - 1, Total_records: total_rows.Total, Size: p_size, Response: dms}
 	response := DmResponseList{Success: true, Data: &pages}
 	json.NewEncoder(w).Encode(response)
 }
@@ -90,7 +108,18 @@ func (h handler) dm_patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("Запрос изменений кода", dm_id)
-	sql, _, _ := goqu.Update(DM_TABLE_NAME).Set(dm_struct).Where(goqu.Ex{"dm": dm_id}).Returning("*").ToSQL()
+	dm_db := DataMatrixCode{}
+	sql, _, _ := goqu.Select("*").From(DM_TABLE_NAME).Where(goqu.Ex{"dm": dm_id}).ToSQL()
+	err = pgxscan.Get(r.Context(), h.DB, &dm_db, sql)
+	if err != nil {
+		log.Println("Ошибка обмена с БД!", err)
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if dm_db.Status > 20 && *dm_struct.Status == 20 {
+		dm_struct.Status = nil
+	}
+	sql, _, _ = goqu.Update(DM_TABLE_NAME).Set(dm_struct).Where(goqu.Ex{"dm": dm_id}).Returning("*").ToSQL()
 	fmt.Println(sql)
 	dm := DataMatrixCode{}
 	err = pgxscan.Get(r.Context(), h.DB, &dm, sql)
@@ -107,6 +136,7 @@ func (h handler) dm_patch(w http.ResponseWriter, r *http.Request) {
 
 func (h handler) dm_post(w http.ResponseWriter, r *http.Request) {
 	var dm_struct DataMatrixCode
+	log.Println("dm_post тело запроса: ", r.Body)
 	err := json.NewDecoder(r.Body).Decode(&dm_struct)
 	if err != nil {
 		log.Println("Ошибка чтения тела запроса!", err)
@@ -114,13 +144,22 @@ func (h handler) dm_post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("Запрос добавления кода", dm_struct.Dm)
-	sql, _, _ := goqu.Insert(DM_TABLE_NAME).Rows(dm_struct).Returning("*").ToSQL()
-	fmt.Println(sql)
+	sql, _, _ := goqu.Insert(DM_TABLE_NAME).Rows(dm_struct).OnConflict(
+		goqu.DoUpdate("dm", goqu.Record{
+			"status":              goqu.L("EXCLUDED.status"),
+			"scandate":            goqu.L("EXCLUDED.scandate"),
+			"taskid":              goqu.L("EXCLUDED.taskid"),
+			"volume":              goqu.L("EXCLUDED.volume"),
+			"weight":              goqu.L("EXCLUDED.weight"),
+			"insert_by":           goqu.L("EXCLUDED.insert_by"),
+			"verification_device": goqu.L("EXCLUDED.verification_device"),
+		}).Where(goqu.Ex{"dm.status": 20})).Returning("*").ToSQL()
+	log.Println(sql)
 	dm := DataMatrixCode{}
 	err = pgxscan.Get(r.Context(), h.DB, &dm, sql)
 	if err != nil {
 		log.Println("Ошибка обмена с БД!", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	w.Header().Add("Content-Type", "application/json")

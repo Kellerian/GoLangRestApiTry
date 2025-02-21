@@ -1,0 +1,110 @@
+basePath: /api/v2
+definitions:
+  main.DataMatrixCode:
+    properties:
+      aggregate:
+        type: string
+      crpt_state:
+        example: "0"
+        type: string
+      crpt_template_idx:
+        type: integer
+      dm:
+        type: string
+      dm_91:
+        type: string
+      dm_92:
+        type: string
+      dm_93:
+        type: string
+      dm_8005:
+        type: string
+      dm_tail:
+        type: string
+      emission_date:
+        type: string
+      emission_document:
+        type: string
+      gtin:
+        type: string
+      insert_by:
+        type: string
+      payment_on_emission:
+        type: boolean
+      processing_in_document:
+        type: string
+      scandate:
+        type: string
+      status:
+        example: "0"
+        type: string
+      taskid:
+        type: integer
+      verification_device:
+        type: string
+      volume:
+        type: integer
+      weight:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: Это Rest API для DMC на базе Go
+  title: DMC GO Rest API
+  version: 1.0.4.5
+paths:
+  /dm:
+    get:
+      consumes:
+      - application/json
+      description: Получить список кодов маркировки с пагинацией по фильтрам
+      parameters:
+      - in: query
+        name: aggregate
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: dm
+        type: array
+      - in: query
+        name: gtin
+        type: string
+      - in: query
+        name: level
+        type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: status
+        type: array
+      - in: query
+        name: taskid
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.DataMatrixCode'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      summary: Получение списка кодов маркировки
+      tags:
+      - dm
+swagger: "2.0"

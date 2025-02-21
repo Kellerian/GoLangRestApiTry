@@ -6,14 +6,6 @@ import (
 	"github.com/guregu/null/v5"
 )
 
-type AggrFilterParams struct {
-	Taskid    *int     `in:"query=taskid" db:"taskid" goqu:"omitnil"`
-	Gtin      *string  `in:"query=gtin" db:"gtin" goqu:"omitnil, omitempty"`
-	Status    []string `in:"query=status[],status" db:"status" goqu:"omitnil, omitempty"`
-	Aggregate *string  `in:"query=aggregate" db:"parent_id" goqu:"omitnil, omitempty"`
-	Level     *int     `in:"query=level" db:"level" goqu:"omitnil"`
-}
-
 type Aggregate struct {
 	Status                 int                `db:"status" json:"status"`
 	Aggr_gtin              null.String        `db:"aggr_gtin" json:"aggr_gtin"`
@@ -67,6 +59,7 @@ type AggrPagedResponse struct {
 	Next_page     int         `json:"next_page"`
 	Previous_page int         `json:"previous_page"`
 	Total_records int         `json:"total_records"`
+	Size          int         `json:"size"`
 	Response      []Aggregate `json:"response"`
 }
 

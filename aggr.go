@@ -15,7 +15,7 @@ import (
 const AGGR_TABLE_NAME = "aggregates"
 
 func (h handler) aggr_get_all(w http.ResponseWriter, r *http.Request) {
-	q := r.Context().Value(httpin.Input).(*AggrFilterParams)
+	q := r.Context().Value(httpin.Input).(*helpers.CodeFilterParams)
 
 	p_size, err := helpers.GetPageSize(r)
 	if err != nil {
@@ -30,8 +30,13 @@ func (h handler) aggr_get_all(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filterMap := helpers.StructToMap(q)
-	sql, _, _ := goqu.Select("*").From(AGGR_TABLE_NAME).Where(goqu.Ex(filterMap)).Order(goqu.C("unit_id").Asc()).Offset(helpers.CalcOffset(p_size, p_num)).Limit(uint(p_size)).ToSQL()
+	whereConditions, err := helpers.BuildWhereClause(q)
+	if err != nil {
+		// Обработка ошибки
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	sql, _, _ := goqu.Select("*").From(AGGR_TABLE_NAME).Where(whereConditions...).Order(goqu.C("unit_id").Asc()).Offset(helpers.CalcOffset(p_size, p_num)).Limit(uint(p_size)).ToSQL()
 	fmt.Println(sql)
 	aggrs := []Aggregate{}
 	err = pgxscan.Select(r.Context(), h.DB, &aggrs, sql)
@@ -41,7 +46,7 @@ func (h handler) aggr_get_all(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total_rows := helpers.RowCount{}
-	sql_count, _, _ := goqu.Select(goqu.COUNT("*")).From(AGGR_TABLE_NAME).Where(goqu.Ex(filterMap)).ToSQL()
+	sql_count, _, _ := goqu.Select(goqu.COUNT("*")).From(AGGR_TABLE_NAME).Where(whereConditions...).ToSQL()
 	err = pgxscan.Get(r.Context(), h.DB, &total_rows, sql_count)
 	if err != nil {
 		log.Println("Ошибка обмена с БД!", err)
@@ -50,7 +55,7 @@ func (h handler) aggr_get_all(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	pages := AggrPagedResponse{Next_page: p_num + 1, Page: p_num, Previous_page: p_num - 1, Total_records: total_rows.Total, Response: aggrs}
+	pages := AggrPagedResponse{Next_page: p_num + 1, Page: p_num, Previous_page: p_num - 1, Total_records: total_rows.Total, Size: p_size, Response: aggrs}
 	response := AggrResponseList{Success: true, Data: &pages}
 	json.NewEncoder(w).Encode(response)
 }
@@ -89,7 +94,18 @@ func (h handler) aggr_patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Println("Запрос изменений кода", unit_id)
-	sql, _, _ := goqu.Update(AGGR_TABLE_NAME).Set(aggr_struct).Where(goqu.Ex{"unit_id": unit_id}).Returning("*").ToSQL()
+	aggr_db := Aggregate{}
+	sql, _, _ := goqu.Select("*").From(AGGR_TABLE_NAME).Where(goqu.Ex{"unit_id": unit_id}).ToSQL()
+	err = pgxscan.Get(r.Context(), h.DB, &aggr_db, sql)
+	if err != nil {
+		log.Println("Ошибка обмена с БД!", err)
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if aggr_db.Status > 20 && *aggr_struct.Status == 20 {
+		aggr_struct.Status = nil
+	}
+	sql, _, _ = goqu.Update(AGGR_TABLE_NAME).Set(aggr_struct).Where(goqu.Ex{"unit_id": unit_id}).Returning("*").ToSQL()
 	fmt.Println(sql)
 	aggr := Aggregate{}
 	err = pgxscan.Get(r.Context(), h.DB, &aggr, sql)

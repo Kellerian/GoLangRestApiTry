@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -92,12 +93,12 @@ func New(db *pgxpool.Pool) handler {
 func Connect() *pgxpool.Pool {
 	config, err := loadSQLConfig()
 	if err != nil {
-		logger.Fatalf("Failed to load SQL config: %v", err)
+		log.Fatalf("Failed to load SQL config: %v", err)
 	}
 	connInfo := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", config.User, config.Password, config.Host, config.Port, config.DBName)
 	pgxConfig, err := pgxpool.ParseConfig(connInfo)
 	if err != nil {
-		logger.Fatalf("Unable to connect to database: %v\n", err)
+		log.Fatalf("Unable to connect to database: %v\n", err)
 		os.Exit(1)
 	}
 	pgxConfig.MaxConns = 5
@@ -108,10 +109,10 @@ func Connect() *pgxpool.Pool {
 	db, err := pgxpool.NewWithConfig(context.Background(), pgxConfig)
 
 	if err != nil {
-		logger.Fatalf("Unable to connect to database: %v\n", err)
+		log.Fatalf("Unable to connect to database: %v\n", err)
 		os.Exit(1)
 	}
-	logger.Printf("Successfully connected to db %s!\n", connInfo)
+	log.Printf("Successfully connected to db %s!\n", connInfo)
 	return db
 }
 
